@@ -2,7 +2,10 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::errors::EditorErrors;
 
-mod errors;
+pub(crate) mod editor;
+pub(crate) mod errors;
+
+pub use editor::Editor;
 
 pub type EResult<T> = Result<T, EditorErrors>;
 
@@ -15,6 +18,8 @@ pub enum Key {
     ArrowRight,
     PageUp,
     PageDown,
+    Home,
+    End,
     Backspace,
     Delete,
     Enter,
@@ -34,6 +39,8 @@ impl From<KeyCode> for Key {
             KeyCode::Down => Key::ArrowDown,
             KeyCode::PageUp => Key::PageUp,
             KeyCode::PageDown => Key::PageDown,
+            KeyCode::Home => Key::Home,
+            KeyCode::End => Key::End,
             KeyCode::Delete => Key::Delete,
             KeyCode::Enter => Key::Enter,
             KeyCode::Esc => Key::ESC,
@@ -51,13 +58,5 @@ impl From<KeyEvent> for Key {
             }
         }
         Key::Unknown
-    }
-}
-
-pub struct Editor {}
-
-impl Editor {
-    pub fn handle_key(&self) -> EResult<()> {
-        Ok(())
     }
 }
