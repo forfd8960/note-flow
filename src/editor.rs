@@ -16,7 +16,7 @@ pub struct Document {
 impl Document {
     pub fn sample_doc() -> Self {
         let mut lines = Vec::new();
-        for idx in 0..20 {
+        for idx in 0..10 {
             lines.push(format!("{}: This is a Line_{}", idx + 1, idx + 1));
         }
         Self { lines }
@@ -53,7 +53,7 @@ impl Editor {
             cursor_x: 0,
             cursor_y: 0,
             row_offset: 0,
-            screen_rows: rows,
+            screen_rows: rows.saturating_sub(1), // leave the last row for status
             screen_cols: cols,
         })
     }
@@ -103,6 +103,24 @@ impl Editor {
         self.cursor_x = line_count as u16;
     }
 
+    /// scroll adjust the row offset
+    /// when scroll up, cursor_y may small than row_offset, so adjust row_offset
+    /// to be cursor_y value
+    /// when scroll down, cursor_y may greater than row_offset+screen_rows, so adjust row_offset
+    /// to be cursor_y - screen_rows + 1
+    /// to make sure row_offset show the top line of the doc
+    fn scroll(&mut self) {
+        // user scroll up, then row_offset also should up
+        if self.cursor_y < self.row_offset {
+            self.row_offset = self.cursor_y;
+        }
+
+        // user scroll down below the screen
+        if self.cursor_y >= self.row_offset + self.screen_rows {
+            self.row_offset = self.cursor_y - self.screen_rows + 1;
+        }
+    }
+
     pub fn handle_key(&mut self, key: Key) -> EResult<bool> {
         let doc_len = self.doc.len();
         let line = self.doc.line(self.cursor_y as usize);
@@ -123,6 +141,8 @@ impl Editor {
             _ => {}
         }
 
+        self.scroll();
+
         Ok(false)
     }
 
@@ -132,6 +152,12 @@ impl Editor {
 
         for row in 0..self.screen_rows {
             let line_idx = self.row_offset + row;
+            if line_idx as usize >= self.doc.len() {
+                execute!(out, MoveTo(0, row))?;
+                print!("~");
+                continue;
+            }
+
             let line = self.doc.line(line_idx as usize);
             execute!(out, MoveTo(0, row))?;
 
