@@ -1,4 +1,9 @@
-use std::io::{Stdout, Write};
+use std::{
+    ffi::OsStr,
+    fs,
+    io::{Stdout, Write},
+    path::PathBuf,
+};
 
 use crossterm::{
     cursor::MoveTo,
@@ -8,8 +13,9 @@ use crossterm::{
 
 use crate::{EResult, Key};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Document {
+    pub name: String,
     pub lines: Vec<String>,
 }
 
@@ -19,7 +25,33 @@ impl Document {
         for idx in 0..10 {
             lines.push(format!("{}: This is a Line_{}", idx + 1, idx + 1));
         }
-        Self { lines }
+        Self {
+            name: format!("sample"),
+            lines,
+        }
+    }
+
+    pub fn open(path: &PathBuf) -> EResult<Self> {
+        let content = fs::read_to_string(path)?;
+        let lines: Vec<String> = content.split("\n").map(String::from).collect();
+        let name = path.file_name();
+        Ok(Self {
+            name: name
+                .unwrap_or(OsStr::new("default"))
+                .to_string_lossy()
+                .to_string(),
+            lines,
+        })
+    }
+
+    pub fn save(&self) -> EResult<()> {
+        let p = PathBuf::from(&self.name);
+        fs::write(p, self.content())?;
+        Ok(())
+    }
+
+    pub fn content(&self) -> String {
+        self.lines.join("\n").to_string()
     }
 
     pub fn len(&self) -> usize {
@@ -33,7 +65,7 @@ impl Document {
     /// insert char: c at pos for line
     pub fn insert_char(&mut self, line: usize, pos: usize, c: char) -> (usize, usize) {
         if line >= self.lines.len() {
-            self.lines.insert(line + 1, String::new());
+            self.lines.resize(line + 1, String::new());
         }
 
         let insert_pos = pos.min(self.lines[line].len());
@@ -182,6 +214,15 @@ impl Editor {
         }
     }
 
+    fn save(&mut self) -> EResult<()> {
+        if self.doc.name.is_empty() {
+            self.doc.name = "default".to_string();
+        }
+
+        self.doc.save()?;
+        Ok(())
+    }
+
     pub fn handle_key(&mut self, key: Key) -> EResult<bool> {
         let doc_len = self.doc.len();
         let line = self.doc.line(self.cursor_y as usize);
@@ -201,6 +242,7 @@ impl Editor {
             Key::Char(c) => self.insert_char(c),
             Key::Backspace => self.delete_char(),
             Key::Enter => self.insert_new_line(),
+            Key::Ctrl('s') | Key::Ctrl('S') => self.save()?,
             Key::Ctrl('q') | Key::Ctrl('Q') => return Ok(true),
             _ => {}
         }
@@ -232,7 +274,8 @@ impl Editor {
         let status_row = self.screen_rows;
         execute!(out, MoveTo(0, status_row))?;
         print!(
-            "doc rows: {} | x: {}, y: {} | row_offset: {}",
+            "{} rows: {} | x: {}, y: {} | row_offset: {}",
+            self.doc.name,
             self.doc.len(),
             self.cursor_x,
             self.cursor_y,

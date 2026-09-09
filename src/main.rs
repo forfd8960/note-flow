@@ -1,7 +1,11 @@
-use std::io::{self, Write};
+use std::{
+    env,
+    io::{self},
+    path::PathBuf,
+};
 
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
+    cursor::{Hide, Show},
     event::{self, Event},
     execute,
     terminal::{
@@ -12,6 +16,13 @@ use crossterm::{
 use note_flow::{Document, Editor, Key};
 
 fn main() -> anyhow::Result<()> {
+    let args: Vec<String> = env::args().collect();
+
+    let doc = match args.get(1) {
+        Some(p) => Document::open(&PathBuf::from(p))?,
+        None => Document::default(),
+    };
+
     enable_raw_mode()?;
     execute!(
         io::stdout(),
@@ -22,7 +33,7 @@ fn main() -> anyhow::Result<()> {
 
     // move to top left with moveto
     let mut out = io::stdout();
-    let mut editor = Editor::new(Document::sample_doc())?;
+    let mut editor = Editor::new(doc)?;
     editor.refresh(&mut out)?;
 
     loop {
@@ -41,7 +52,6 @@ fn main() -> anyhow::Result<()> {
     }
 
     execute!(&out, LeaveAlternateScreen, Show)?;
-
     disable_raw_mode()?;
     Ok(())
 }
