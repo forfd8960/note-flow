@@ -9,7 +9,7 @@ use crossterm::{
         enable_raw_mode,
     },
 };
-use note_flow::{Editor, Key};
+use note_flow::{Document, Editor, Key};
 
 fn main() -> anyhow::Result<()> {
     enable_raw_mode()?;
@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
 
     // move to top left with moveto
     let mut out = io::stdout();
-    let mut editor = Editor::new()?;
+    let mut editor = Editor::new(Document::sample_doc())?;
     editor.refresh(&mut out)?;
 
     loop {

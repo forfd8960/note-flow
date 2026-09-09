@@ -5,6 +5,7 @@ use crate::errors::EditorErrors;
 pub(crate) mod editor;
 pub(crate) mod errors;
 
+pub use editor::Document;
 pub use editor::Editor;
 
 pub type EResult<T> = Result<T, EditorErrors>;
