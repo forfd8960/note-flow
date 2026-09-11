@@ -27,7 +27,7 @@ fn main() -> anyhow::Result<()> {
     execute!(
         io::stdout(),
         EnterAlternateScreen,
-        Hide,
+        Show,
         Clear(ClearType::All)
     )?;
 
@@ -43,7 +43,7 @@ fn main() -> anyhow::Result<()> {
                 other => other,
             };
 
-            let quit = editor.handle_key(key)?;
+            let quit = editor.handle_mode(key)?;
             if quit {
                 break;
             }

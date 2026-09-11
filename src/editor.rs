@@ -3,6 +3,7 @@ use std::{
     fs,
     io::{Stdout, Write},
     path::PathBuf,
+    time::SystemTime,
 };
 
 use crossterm::{
@@ -11,12 +12,32 @@ use crossterm::{
     terminal::{self, Clear},
 };
 
-use crate::{EResult, Key};
+use crate::{EResult, Key, editor::Mode::Normal};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum Mode {
+    Normal,  // Navigate, delete, copy, paste, run commands
+    Insert,  // insert mode, can editor the content, Type/edit text
+    Command, // command mode, Save, quit, search/replace, settings
+}
+
+#[derive(Debug)]
 pub struct Document {
     pub name: String,
     pub lines: Vec<String>,
+}
+
+impl Default for Document {
+    fn default() -> Self {
+        let dur = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        Self {
+            name: format!("file_{}", dur),
+            lines: vec![],
+        }
+    }
 }
 
 impl Document {
@@ -58,8 +79,11 @@ impl Document {
         self.lines.len()
     }
 
-    pub fn line(&self, idx: usize) -> &str {
-        self.lines.get(idx).map(String::as_str).unwrap_or("")
+    pub fn line(&self, idx: usize) -> String {
+        self.lines
+            .get(idx)
+            .map(|v| v.clone())
+            .unwrap_or(format!(""))
     }
 
     /// insert char: c at pos for line
@@ -107,11 +131,13 @@ impl Document {
 #[derive(Debug)]
 pub struct Editor {
     pub doc: Document,
+    pub mode: Mode,
     pub row_offset: u16, // the line index shows top line(row 0)
     pub cursor_x: u16,   // col index in the line
     pub cursor_y: u16,   // line index in the document
     pub screen_rows: u16,
     pub screen_cols: u16,
+    pub cmd: String,
 }
 
 impl Editor {
@@ -119,11 +145,13 @@ impl Editor {
         let (cols, rows) = terminal::size()?;
         Ok(Self {
             doc,
+            mode: Normal,
             cursor_x: 0,
             cursor_y: 0,
             row_offset: 0,
             screen_rows: rows.saturating_sub(1), // leave the last row for status
             screen_cols: cols,
+            cmd: format!(""),
         })
     }
 
@@ -180,6 +208,22 @@ impl Editor {
         self.cursor_x = col as u16;
     }
 
+    fn insert_to_command(&mut self, c: char) {
+        self.cmd.push(c);
+    }
+
+    fn clear_cmd(&mut self) {
+        self.cmd.clear();
+    }
+
+    fn del_cmd_char(&mut self) {
+        if self.cmd.is_empty() {
+            return;
+        }
+
+        let _ = self.cmd.pop();
+    }
+
     fn delete_char(&mut self) {
         let (row, col) = self
             .doc
@@ -223,9 +267,99 @@ impl Editor {
         Ok(())
     }
 
-    pub fn handle_key(&mut self, key: Key) -> EResult<bool> {
+    fn switch_mode(&mut self, to: Mode) {
+        self.mode = to
+    }
+
+    pub fn handle_mode(&mut self, key: Key) -> EResult<bool> {
+        match self.mode {
+            Mode::Normal => self.handle_normal_mode(key),
+            Mode::Insert => self.handle_edit_mode(key),
+            Mode::Command => self.handle_command_mode(key),
+        }
+    }
+
+    pub fn handle_normal_mode(&mut self, key: Key) -> EResult<bool> {
         let doc_len = self.doc.len();
         let line = self.doc.line(self.cursor_y as usize);
+        match key {
+            Key::ArrowLeft
+            | Key::ArrowRight
+            | Key::ArrowUp
+            | Key::ArrowDown
+            | Key::PageUp
+            | Key::PageDown
+            | Key::Home
+            | Key::End => self.handle_move(key, line, doc_len),
+
+            Key::Char('i') => {
+                self.switch_mode(Mode::Insert);
+            }
+            Key::Char(':') => {
+                self.clear_cmd();
+                self.insert_to_command(':');
+                self.switch_mode(Mode::Command);
+            }
+
+            Key::Ctrl('s') | Key::Ctrl('S') => self.save()?,
+            Key::Ctrl('q') | Key::Ctrl('Q') => return Ok(true),
+            _ => {}
+        }
+
+        self.scroll();
+
+        Ok(false)
+    }
+
+    pub fn handle_edit_mode(&mut self, key: Key) -> EResult<bool> {
+        let doc_len = self.doc.len();
+        let line = self.doc.line(self.cursor_y as usize);
+        match key {
+            Key::ArrowLeft
+            | Key::ArrowRight
+            | Key::ArrowUp
+            | Key::ArrowDown
+            | Key::PageUp
+            | Key::PageDown
+            | Key::Home
+            | Key::End => self.handle_move(key, line, doc_len),
+            Key::ESC => self.switch_mode(Mode::Normal),
+            Key::Char(c) => self.insert_char(c),
+            Key::Backspace => self.delete_char(),
+            Key::Enter => self.insert_new_line(),
+            Key::Ctrl('s') | Key::Ctrl('S') => self.save()?,
+            _ => {}
+        }
+
+        self.scroll();
+
+        Ok(false)
+    }
+
+    pub fn handle_command_mode(&mut self, key: Key) -> EResult<bool> {
+        match key {
+            Key::ESC => self.switch_mode(Mode::Normal),
+            Key::Char(c) => self.insert_to_command(c),
+            Key::Backspace => self.del_cmd_char(),
+            Key::Enter => return self.run_command(),
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn run_command(&mut self) -> EResult<bool> {
+        match self.cmd.as_str().trim() {
+            ":q" => return Ok(true),
+            ":wq" => {
+                self.save()?;
+                return Ok(true);
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn handle_move(&mut self, key: Key, line: String, doc_len: usize) {
         match key {
             Key::ArrowLeft => self.move_left(),
             Key::ArrowRight => {
@@ -239,17 +373,8 @@ impl Editor {
             Key::PageDown => self.move_page_down(doc_len),
             Key::Home => self.move_home(),
             Key::End => self.move_end(line.len()),
-            Key::Char(c) => self.insert_char(c),
-            Key::Backspace => self.delete_char(),
-            Key::Enter => self.insert_new_line(),
-            Key::Ctrl('s') | Key::Ctrl('S') => self.save()?,
-            Key::Ctrl('q') | Key::Ctrl('Q') => return Ok(true),
             _ => {}
         }
-
-        self.scroll();
-
-        Ok(false)
     }
 
     /// re-paint the screen
@@ -273,14 +398,18 @@ impl Editor {
 
         let status_row = self.screen_rows;
         execute!(out, MoveTo(0, status_row))?;
-        print!(
-            "{} rows: {} | x: {}, y: {} | row_offset: {}",
-            self.doc.name,
-            self.doc.len(),
-            self.cursor_x,
-            self.cursor_y,
-            self.row_offset
-        );
+        if self.mode == Mode::Command {
+            print!("{}", self.cmd);
+        } else {
+            print!(
+                "{} rows: {} | x: {}, y: {} | row_offset: {}",
+                self.doc.name,
+                self.doc.len(),
+                self.cursor_x,
+                self.cursor_y,
+                self.row_offset
+            );
+        }
 
         let screen_x = (self.screen_cols - 1).min(self.cursor_x);
         let screen_y = self.cursor_y - self.row_offset;
