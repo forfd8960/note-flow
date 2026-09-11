@@ -8,7 +8,7 @@ use std::{
 
 use crossterm::{
     cursor::MoveTo,
-    execute,
+    execute, queue,
     terminal::{self, Clear},
 };
 
@@ -379,41 +379,46 @@ impl Editor {
 
     /// re-paint the screen
     pub fn refresh(&mut self, out: &mut Stdout) -> EResult<()> {
-        execute!(out, Clear(terminal::ClearType::All))?;
+        queue!(out, Clear(terminal::ClearType::All))?;
 
         for row in 0..self.screen_rows {
             let line_idx = self.row_offset + row;
             if line_idx as usize >= self.doc.len() {
-                execute!(out, MoveTo(0, row))?;
-                print!("~");
+                queue!(out, MoveTo(0, row))?;
+                write!(out, "~")?;
                 continue;
             }
 
             let line = self.doc.line(line_idx as usize);
-            execute!(out, MoveTo(0, row))?;
+            queue!(out, MoveTo(0, row))?;
 
-            let chars = line.chars().into_iter().take(self.screen_cols as usize);
-            print!("{}", String::from_iter(chars));
+            let visible: String = line
+                .chars()
+                .into_iter()
+                .take(self.screen_cols as usize)
+                .collect();
+            write!(out, "{}", visible)?;
         }
 
         let status_row = self.screen_rows;
-        execute!(out, MoveTo(0, status_row))?;
+        queue!(out, MoveTo(0, status_row))?;
         if self.mode == Mode::Command {
-            print!("{}", self.cmd);
+            write!(out, "{}", self.cmd)?;
         } else {
-            print!(
+            write!(
+                out,
                 "{} rows: {} | x: {}, y: {} | row_offset: {}",
                 self.doc.name,
                 self.doc.len(),
                 self.cursor_x,
                 self.cursor_y,
                 self.row_offset
-            );
+            )?;
         }
 
         let screen_x = (self.screen_cols - 1).min(self.cursor_x);
         let screen_y = self.cursor_y - self.row_offset;
-        execute!(out, MoveTo(screen_x, screen_y))?;
+        queue!(out, MoveTo(screen_x, screen_y))?;
         out.flush()?;
         Ok(())
     }
