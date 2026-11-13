@@ -5,7 +5,7 @@ use std::{
 };
 
 use crossterm::{
-    cursor::{Hide, Show},
+    cursor::Show,
     event::{self, Event},
     execute,
     terminal::{
@@ -13,6 +13,7 @@ use crossterm::{
         enable_raw_mode,
     },
 };
+
 use note_flow::{Document, Editor, Key};
 
 fn main() -> anyhow::Result<()> {
