@@ -263,6 +263,61 @@ impl Editor {
         self.cursor_x = (cur + move_len) as u16;
     }
 
+    fn move_backward_by_word(&mut self) {
+        let y = self.cursor_y as usize;
+        let Some(line) = self.doc.lines.get(y) else {
+            return;
+        };
+        let cur = floor_char_boundary(line, (self.cursor_x as usize).min(line.len()));
+
+        if cur == 0 {
+            self.move_to_prev_line_end(y);
+            return;
+        }
+
+        let mut move_len = 0;
+        let mut in_word = false;
+        let chars: Vec<char> = line[0..cur].chars().rev().collect();
+        let mut idx = 0;
+        while idx < chars.len() {
+            if in_word && chars[idx].is_whitespace() {
+                break;
+            }
+
+            if !chars[idx].is_whitespace() {
+                in_word = true;
+            }
+
+            move_len += chars[idx].len_utf8();
+            idx += 1;
+        }
+
+        if (cur - move_len) as usize == 0 {
+            self.cursor_x = 0;
+            return;
+        }
+
+        if cur < move_len {
+            self.move_to_prev_line_end(y);
+            return;
+        }
+
+        self.cursor_x = (cur - move_len) as u16;
+    }
+
+    fn move_to_prev_line_end(&mut self, y: usize) {
+        if y == 0 {
+            return;
+        }
+
+        let Some(prev_line) = self.doc.lines.get(y - 1) else {
+            return;
+        };
+
+        self.cursor_x = prev_line.len() as u16;
+        self.move_up();
+    }
+
     fn move_up(&mut self) {
         if self.cursor_y > 0 {
             self.cursor_y -= 1;
@@ -386,6 +441,9 @@ impl Editor {
             }
             (Mode::Normal, Key::Char('w')) => {
                 self.move_by_word(self.doc.len());
+            }
+            (Mode::Normal, Key::Char('b')) => {
+                self.move_backward_by_word();
             }
             (Mode::Insert, Key::ESC) => self.switch_mode(Mode::Normal),
             (Mode::Insert, Key::Char(c)) => {
