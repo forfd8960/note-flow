@@ -4,33 +4,21 @@ use std::{
     path::PathBuf,
 };
 
-use crossterm::{
-    cursor::Show,
-    event::{self, Event},
-    execute,
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
-    },
-};
+use crossterm::event::{self, Event};
 
-use note_flow::{Document, Editor, Key};
+use note_flow::{Document, Editor, Key, TerminalSession};
 
 fn main() -> anyhow::Result<()> {
-    let args: Vec<String> = env::args().collect();
+    // Bind the session to a named variable so it lives until the end of main.
+    // Its Drop impl restores the terminal. `let _ = ...` would drop it
+    // immediately and restore the terminal before the editor even started.
+    let _session = TerminalSession::enter()?;
 
+    let args: Vec<String> = env::args().collect();
     let doc = match args.get(1) {
         Some(p) => Document::open(&PathBuf::from(p))?,
         None => Document::default(),
     };
-
-    enable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        EnterAlternateScreen,
-        Show,
-        Clear(ClearType::All)
-    )?;
 
     // move to top left with moveto
     let mut out = io::stdout();
@@ -52,7 +40,5 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    execute!(&out, LeaveAlternateScreen, Show)?;
-    disable_raw_mode()?;
     Ok(())
 }

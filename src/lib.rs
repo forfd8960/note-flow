@@ -1,4 +1,11 @@
+use std::io;
+
+use crossterm::cursor::Show;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::execute;
+use crossterm::terminal::{
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
 
 use crate::errors::EditorErrors;
 
@@ -59,5 +66,31 @@ impl From<KeyEvent> for Key {
             }
         }
         Key::Unknown
+    }
+}
+
+pub struct TerminalSession;
+
+impl TerminalSession {
+    pub fn enter() -> anyhow::Result<Self> {
+        enable_raw_mode()?;
+
+        if let Err(e) = execute!(
+            io::stdout(),
+            EnterAlternateScreen,
+            Show,
+            Clear(ClearType::All)
+        ) {
+            let _ = disable_raw_mode();
+            return Err(e.into());
+        }
+        Ok(Self)
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        let _ = execute!(io::stdout(), LeaveAlternateScreen, Show);
+        let _ = disable_raw_mode();
     }
 }
